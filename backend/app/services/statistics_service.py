@@ -85,6 +85,12 @@ class StatisticsService:
             func.coalesce(func.sum(PlantReplacement.quantity), 0),
             func.coalesce(func.sum(PlantReplacement.amount), 0),
         ).one()
+        pending_price_count = (
+            db.session.query(func.count(PlantReplacement.id))
+            .filter(PlantReplacement.unit_price.is_(None))
+            .scalar()
+            or 0
+        )
         month_count, month_quantity, month_amount = db.session.query(
             func.count(PlantReplacement.id),
             func.coalesce(func.sum(PlantReplacement.quantity), 0),
@@ -122,6 +128,7 @@ class StatisticsService:
                 "total": replacement_total or 0,
                 "total_quantity": to_float(quantity_total) or 0,
                 "total_amount": to_float(amount_total) or 0,
+                "pending_price_count": pending_price_count,
                 "month_count": month_count or 0,
                 "month_quantity": to_float(month_quantity) or 0,
                 "month_amount": to_float(month_amount) or 0,

@@ -109,4 +109,5 @@ def replacement_filters(args):
         filters["keyword"] = keyword
     filters["date_from"] = _date(args, "date_from")
     filters["date_to"] = _date(args, "date_to")
+    filters["price_pending"] = _flag(args, "price_pending")
     return filters

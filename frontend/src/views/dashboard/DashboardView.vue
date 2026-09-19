@@ -46,7 +46,7 @@
       <StatCard
         label="累计更换投入"
         :value="formatCurrency(overview.replacement.total_amount)"
-        :hint="`今年 ${formatCurrency(overview.replacement.year_amount)}，共 ${formatNumber(overview.replacement.total)} 次`"
+        :hint="cumulativeInvestHint"
         tone="info"
         icon="Money"
       />
@@ -176,7 +176,7 @@ function emptyDashboard() {
       green_space: { total: 0, total_area: 0, by_status: {} },
       task: { total: 0, open_count: 0, overdue_count: 0, due_soon_count: 0, completion_rate: 0, by_status: {} },
       record: { total: 0, month_count: 0, month_work_hours: 0, total_work_hours: 0 },
-      replacement: { total: 0, month_count: 0, month_quantity: 0, month_amount: 0, year_amount: 0, total_amount: 0 },
+      replacement: { total: 0, month_count: 0, month_quantity: 0, month_amount: 0, year_amount: 0, total_amount: 0, pending_price_count: 0 },
     },
     distributions: {
       green_space_by_type: [],
@@ -193,6 +193,13 @@ function emptyDashboard() {
 }
 
 const overview = computed(() => dashboard.value.overview)
+
+const cumulativeInvestHint = computed(() => {
+  const replacement = overview.value.replacement
+  const base = `今年 ${formatCurrency(replacement.year_amount)}，共 ${formatNumber(replacement.total)} 次`
+  const pending = replacement.pending_price_count || 0
+  return pending ? `${base}；${pending} 条待补价未计入` : base
+})
 
 const trendChart = computed(() => trendOption(dashboard.value.trends || []))
 

@@ -2,6 +2,10 @@
   <div class="page">
     <PageHeader title="绿植更换记录" description="登记绿地内植株的更换、补植与品种改造，自动核算更换金额">
       <template #actions>
+        <el-button v-if="pendingPriceCount" type="warning" plain :icon="'PriceTag'"
+                   @click="priceFillDialog.open()">
+          批量补价（{{ pendingPriceCount }} 条待补）
+        </el-button>
         <el-button type="primary" :icon="'Plus'" @click="formDialog.open()">登记更换记录</el-button>
       </template>
     </PageHeader>
@@ -30,7 +34,8 @@
       <StatCard label="更换记录" :value="formatNumber(summary?.total_count ?? 0)" unit="条"
                 :hint="`合计数量 ${formatNumber(summary?.total_quantity ?? 0)}`" icon="Cherry" />
       <StatCard label="更换金额" :value="formatCurrency(summary?.total_amount ?? 0)"
-                hint="按登记的单价与数量核算" tone="info" icon="Money" />
+                :hint="pendingPriceCount ? `另有 ${pendingPriceCount} 条待补价，未计入金额` : '按登记的单价与数量核算'"
+                tone="info" icon="Money" />
       <StatCard label="涉及植物类别" :value="formatNumber(summary?.by_category?.length ?? 0)" unit="类"
                 :hint="(summary?.by_category || []).map((item) => item.label).join('、') || '暂无数据'" icon="Grape" />
       <StatCard label="主要更换原因"
@@ -137,6 +142,7 @@
     </div>
 
     <ReplacementFormDialog ref="formDialog" @saved="load" />
+    <PriceFillDialog ref="priceFillDialog" @saved="load" />
   </div>
 </template>
 
@@ -155,9 +161,11 @@ import { useListQuery } from '@/composables/useListQuery'
 import { formatCurrency, formatDate, formatDateTime, formatNumber } from '@/utils/format'
 
 import ReplacementFormDialog from './ReplacementFormDialog.vue'
+import PriceFillDialog from './PriceFillDialog.vue'
 
 const route = useRoute()
 const formDialog = ref(null)
+const priceFillDialog = ref(null)
 const dateRange = ref([])
 
 const { options: categoryOptions } = useEnumOptions('plant_category')
@@ -180,6 +188,8 @@ const topReason = computed(() => {
   if (!rows.length) return null
   return rows.sort((a, b) => b.quantity - a.quantity)[0]
 })
+
+const pendingPriceCount = computed(() => summary.value?.pending_price_count ?? 0)
 
 function shareOf(quantity) {
   const total = summary.value?.total_quantity || 0
