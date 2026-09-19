@@ -110,3 +110,119 @@ def test_delete_replacement(api, make_replacement):
     replacement = make_replacement()
     api.delete(f"/api/v1/plant-replacements/{replacement.id}")
     assert api.get(f"/api/v1/plant-replacements/{replacement.id}").status_code == 404
+
+
+# ------------------------------------------------------------ 批量补价
+
+
+def test_price_fill_propagates_to_all_statistics(api, make_replacement, make_space):
+    space = make_space(name="补价绿地")
+    first = make_replacement(space=space, quantity=10, unit_price=None, reason="dead")
+    second = make_replacement(space=space, quantity=4, unit_price=None, reason="upgrade",
+                              plant_category="shrub")
+    make_replacement(space=space, quantity=1, unit_price=100, reason="dead")
+
+    before = api.data(api.get("/api/v1/plant-replacements/summary"))
+    assert before["total_amount"] == 100.0
+
+    result = api.data(api.post("/api/v1/plant-replacements/price-fill", {
+        "items": [
+            {"id": first.id, "unit_price": 50},
+            {"id": second.id, "unit_price": 25.5},
+        ],
+    }))
+    assert result["filled_count"] == 2
+    assert result["skipped_count"] == 0
+    assert result["filled_amount"] == 602.0  # 10×50 + 4×25.5
+
+    # 明细金额
+    detail = api.data(api.get(f"/api/v1/plant-replacements/{first.id}"))
+    assert detail["unit_price"] == 50.0
+    assert detail["amount"] == 500.0
+
+    # 按植物类别 / 更换原因的合计
+    summary = api.data(api.get("/api/v1/plant-replacements/summary"))
+    assert summary["total_amount"] == 702.0
+    by_category = {item["value"]: item for item in summary["by_category"]}
+    assert by_category["tree"]["amount"] == 600.0
+    assert by_category["shrub"]["amount"] == 102.0
+    by_reason = {item["value"]: item for item in summary["by_reason"]}
+    assert by_reason["dead"]["amount"] == 600.0
+    assert by_reason["upgrade"]["amount"] == 102.0
+
+    # 总览累计投入
+    overview = api.data(api.get("/api/v1/statistics/overview"))
+    assert overview["replacement"]["total_amount"] == 702.0
+
+    # 绿地档案更换投入
+    archive = api.data(api.get(f"/api/v1/green-spaces/{space.id}/profile"))
+    assert archive["statistics"]["replacement_amount"] == 702.0
+    archive_reasons = {item["reason"]: item for item in archive["replacement_summary"]}
+    assert archive_reasons["upgrade"]["amount"] == 102.0
+
+
+def test_price_fill_repeat_submission_only_applies_once(api, make_replacement):
+    replacement = make_replacement(quantity=10, unit_price=None)
+    batch = {"items": [{"id": replacement.id, "unit_price": 88.5}]}
+
+    first = api.data(api.post("/api/v1/plant-replacements/price-fill", batch))
+    assert first["filled_count"] == 1
+    assert first["filled_amount"] == 885.0
+
+    second = api.data(api.post("/api/v1/plant-replacements/price-fill", batch))
+    assert second["filled_count"] == 0
+    assert second["filled_amount"] == 0
+    assert second["skipped"] == [
+        {"id": replacement.id, "replacement_no": replacement.replacement_no,
+         "reason": "already_priced"}
+    ]
+
+    summary = api.data(api.get("/api/v1/plant-replacements/summary"))
+    assert summary["total_amount"] == 885.0  # 没有累加两遍
+
+
+def test_price_fill_skips_duplicate_unknown_and_priced(api, make_replacement):
+    pending = make_replacement(quantity=2, unit_price=None)
+    priced = make_replacement(quantity=3, unit_price=10)
+
+    result = api.data(api.post("/api/v1/plant-replacements/price-fill", {
+        "items": [
+            {"id": pending.id, "unit_price": 30},
+            {"id": pending.id, "unit_price": 99},   # 批内重复，只生效第一次
+            {"id": priced.id, "unit_price": 50},    # 已有单价
+            {"id": 999999, "unit_price": 10},       # 不存在
+        ],
+    }))
+    assert result["filled_count"] == 1
+    assert result["filled_amount"] == 60.0
+    reasons = [item["reason"] for item in result["skipped"]]
+    assert reasons == ["duplicate_in_batch", "already_priced", "not_found"]
+
+    detail = api.data(api.get(f"/api/v1/plant-replacements/{pending.id}"))
+    assert detail["amount"] == 60.0
+    untouched = api.data(api.get(f"/api/v1/plant-replacements/{priced.id}"))
+    assert untouched["unit_price"] == 10.0
+    assert untouched["amount"] == 30.0
+
+
+def test_price_fill_validates_payload(api, make_replacement):
+    replacement = make_replacement(unit_price=None)
+
+    response = api.post("/api/v1/plant-replacements/price-fill", {"items": []})
+    assert response.status_code == 422
+
+    response = api.post("/api/v1/plant-replacements/price-fill", {
+        "items": [{"id": replacement.id, "unit_price": -1}],
+    })
+    assert response.status_code == 422
+    assert "items.0" in response.get_json()["data"]
+
+    response = api.post("/api/v1/plant-replacements/price-fill", {
+        "items": [{"id": replacement.id}],
+    })
+    assert response.status_code == 422
+
+    # 校验失败不产生任何写入
+    detail = api.data(api.get(f"/api/v1/plant-replacements/{replacement.id}"))
+    assert detail["unit_price"] is None
+    assert detail["amount"] is None

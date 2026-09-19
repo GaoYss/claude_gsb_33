@@ -2,6 +2,7 @@
   <div class="page">
     <PageHeader title="绿植更换记录" description="登记绿地内植株的更换、补植与品种改造，自动核算更换金额">
       <template #actions>
+        <el-button :disabled="!selected.length" @click="openPriceFill">批量补价</el-button>
         <el-button type="primary" :icon="'Plus'" @click="formDialog.open()">登记更换记录</el-button>
       </template>
     </PageHeader>
@@ -49,7 +50,9 @@
         <el-button :icon="'Refresh'" text @click="load">刷新</el-button>
       </div>
 
-      <el-table :data="items" v-loading="loading" border stripe>
+      <el-table :data="items" v-loading="loading" border stripe ref="tableRef"
+                @selection-change="(rows) => (selected = rows)">
+        <el-table-column type="selection" width="44" :selectable="(row) => row.amount === null" />
         <el-table-column type="expand">
           <template #default="{ row }">
             <div class="expand-detail">
@@ -137,6 +140,7 @@
     </div>
 
     <ReplacementFormDialog ref="formDialog" @saved="load" />
+    <ReplacementPriceFillDialog ref="priceFillDialog" @saved="onPriceFilled" />
   </div>
 </template>
 
@@ -155,9 +159,13 @@ import { useListQuery } from '@/composables/useListQuery'
 import { formatCurrency, formatDate, formatDateTime, formatNumber } from '@/utils/format'
 
 import ReplacementFormDialog from './ReplacementFormDialog.vue'
+import ReplacementPriceFillDialog from './ReplacementPriceFillDialog.vue'
 
 const route = useRoute()
 const formDialog = ref(null)
+const priceFillDialog = ref(null)
+const tableRef = ref(null)
+const selected = ref([])
 const dateRange = ref([])
 
 const { options: categoryOptions } = useEnumOptions('plant_category')
@@ -191,6 +199,16 @@ function onDateChange(value) {
   filters.date_from = value?.[0] || ''
   filters.date_to = value?.[1] || ''
   search()
+}
+
+function openPriceFill() {
+  // 勾选框已限制只能选中单价待补的记录
+  priceFillDialog.value?.open(selected.value)
+}
+
+async function onPriceFilled() {
+  tableRef.value?.clearSelection()
+  await load()
 }
 
 function reset() {

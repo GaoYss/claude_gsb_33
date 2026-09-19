@@ -2,7 +2,7 @@
 
 from flask import Blueprint, request
 
-from ..schemas import validate_plant_replacement
+from ..schemas import validate_plant_replacement, validate_price_fill
 from ..schemas.filters import replacement_filters
 from ..services import PlantReplacementService
 from ..utils.pagination import paginate, parse_page_args
@@ -32,6 +32,18 @@ def create_replacement():
     payload = validate_plant_replacement(json_body())
     replacement = PlantReplacementService.create(payload)
     return created(replacement.to_dict(detail=True), message="绿植更换记录登记成功")
+
+
+@bp.post("/plant-replacements/price-fill")
+def fill_prices():
+    """批量补录单价：单事务重算金额贯通各处统计，重复提交只生效一次。"""
+
+    payload = validate_price_fill(json_body())
+    result = PlantReplacementService.fill_prices(payload["items"])
+    return ok(
+        result,
+        message=f"补价完成：本次生效 {result['filled_count']} 条，跳过 {result['skipped_count']} 条",
+    )
 
 
 @bp.get("/plant-replacements/<int:replacement_id>")
